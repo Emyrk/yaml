@@ -8,6 +8,25 @@ import (
 )
 
 func TestErrorStrings(t *testing.T) {
+	t.Run("UnknownKey", func(t *testing.T) {
+		type s struct {
+		}
+
+		y := `
+sequence-2:
+ a: b
+`
+		var tmp s
+		d := NewDecoder(bytes.NewBuffer([]byte(y)))
+		d.KnownFields(true)
+		err := d.Decode(&tmp)
+		// Default:
+		// yaml: unmarshal errors:
+		// 	line 3: cannot unmarshal !!map into []string
+		// 	line 5: cannot unmarshal !!map into []string
+		fmt.Println(err)
+	})
+
 	t.Run("MappingOnSequence", func(t *testing.T) {
 		type s struct {
 			Sequence  []string `yaml:"sequence"`
@@ -98,12 +117,21 @@ A: 3
 		type s alphabet
 
 		y := `
-A:
-  S: "Hello?"
-B:
- P:
-  S: "Goodbye"
-  I: "Hello"
+a:
+  s: "Hello?"
+b:
+ p:
+  s: "Goodbye"
+  i: 2
+ nest: 
+#   i: "asd"
+   slice: 
+    - i: 1
+    - i: 2
+    - i: "ASD"
+      b: "ASD"
+    - s: "Hey"
+      i: "Bad"
 `
 		var tmp s
 		err := Unmarshal([]byte(y), &tmp)
@@ -113,24 +141,27 @@ B:
 		var buf bytes.Buffer
 		json.Indent(&buf, data, "", "\t")
 		fmt.Println(buf.String() + "\n")
-		fmt.Println(tmp, err)
+		fmt.Println(tmp, "\n", err)
 	})
 
 }
 
-
 type alphabet struct {
-	A prims `yaml:"A"`
-	B nest `yaml:"B"`
+	A prims
+	B nest
 }
 
 type nest struct {
-	P prims `yaml:"P"`
+	P    prims `yaml:",inline"`
+	Nest struct {
+		P     prims `yaml:",inline"`
+		Slice []prims
+	} `yaml:"nest"`
 }
 
 type prims struct {
-	S string `yaml:"S" json:",omitempty"`
-	I int `yaml:"I" json:",omitempty"`
-	B bool `yaml:"B" json:",omitempty"`
-	F float64 `yaml:"F" json:",omitempty"`
+	S string  `json:",omitempty"`
+	I int     `json:",omitempty"`
+	B bool    `json:",omitempty"`
+	F float64 `json:",omitempty"`
 }

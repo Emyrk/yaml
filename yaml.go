@@ -292,7 +292,7 @@ func handleErr(err *error) {
 			*err = e.err
 		} else if e, ok := v.(YamlError); ok {
 			*err = e
-		} else{
+		} else {
 			panic(v)
 		}
 	}
@@ -376,6 +376,9 @@ const (
 //     err := yaml.Unmarshal(data, &person)
 //
 type Node struct {
+	Parent         *Node
+	SequenceNumber *int
+
 	// Kind defines whether the node is a document, a mapping, a sequence,
 	// a scalar value, or an alias to another node. The specific data type of
 	// scalar nodes may be obtained via the ShortTag and LongTag methods.
@@ -419,6 +422,47 @@ type Node struct {
 	// These fields are not respected when encoding the node.
 	Line   int
 	Column int
+}
+
+// Path returns the hierarchy path to get to the field where this node is.
+func (n *Node) Path() []string {
+	var path []string
+	if n.Kind == MappingNode || n.Kind == SequenceNode {
+		path = []string{n.Value}
+	}
+	next := n.Parent
+	for next != nil {
+		sect := next.Value
+		if next.SequenceNumber != nil {
+			sect += fmt.Sprintf("[%d]", *next.SequenceNumber)
+		}
+		path = append([]string{sect}, path...)
+		next = next.Parent
+	}
+	return path
+}
+
+func (n Node) isSeqChild() bool {
+	next := n.Parent
+	for next != nil {
+		switch next.Kind {
+		case SequenceNode:
+			return true
+		case ScalarNode:
+		default:
+			return false
+		}
+		next = next.Parent
+	}
+	return false
+}
+
+func (n *Node) SetParent(parent *Node) {
+	n.Parent = parent
+}
+
+func (n *Node) SetSequenceNumber(sequenceNumber int) {
+	n.SequenceNumber = &sequenceNumber
 }
 
 // IsZero returns whether the node has all of its fields unset.

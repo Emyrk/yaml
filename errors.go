@@ -1,7 +1,22 @@
 package yaml
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
+)
+
+type YamlTextErrorCause string
+
+const (
+	// CauseUnknownField is used when an unexpected fields is in the yaml.
+	CauseUnknownField YamlTextErrorCause = "unknown field"
+	// CauseKeyAlreadyDefined can be caused by mapping or fields when the key appears
+	// twice.
+	CauseKeyAlreadyDefined YamlTextErrorCause = "key already defined"
+	// CauseWrongType happens when the expected yaml node is incorrect.
+	// E.g: a map when expecting a sequence
+	CauseWrongType YamlTextErrorCause = "incorrect yaml node"
 )
 
 // YamlError is the top level detailed error.
@@ -13,14 +28,29 @@ type YamlError struct {
 	Original error
 }
 
+func (w YamlError) Unwrap() error {
+	return w.Cause
+}
 
+func (w YamlError) Error() string {
+	return w.Cause.Error()
+}
 
 // GoLangStructError are errors that happen when decoding the golang struct,
 // before the yaml is touched.
 // These errors are usually internal server errors as it's a mistake
 // on the Go dev, not the yaml document.
+// TODO: @emyrk Flush these out more maybe.
 type GoLangStructError struct {
 	Err error
+}
+
+func (w GoLangStructError) Unwrap() error {
+	return w.Err
+}
+
+func (w GoLangStructError) Error() string {
+	return w.Err.Error()
 }
 
 // YamlTextError happens when mapping the yaml text to a golang struct.
@@ -28,92 +58,96 @@ type GoLangStructError struct {
 type YamlTextError struct {
 	// Node is the yaml node when the error took place.
 	Node Node
-	// Path is the yaml hierarchy path to the node encountered for the error.
-	// The path include the field attempting to be decoded.
-	Path string
+	// Name is the name of the field if the name cannot be inferred
+	// from Node. Sometimes if a field fails, the `Node` does not have
+	// the field's name, but the function context does.
+	// If 'Name' is blank, then `Path()` will return the full path.
+	Name string
 
 	// Cause is the error that caused the TextError.
-	Cause error
+	Cause YamlTextErrorCause
 	// To is the GoLang value the yaml text was attempted to be decoded into.
 	To reflect.Value
 }
 
-func NewYamlDecodeError(err error, n Node, path string, out reflect.Value) error {
-	return YamlError{
-		Cause:    YamlTextError{
-			Node:  n,
-			Path:  path,
-			Cause: err,
-			To:    out,
-		},
-		Original: err,
+// Error reconstructs the original error from the fields.
+// This should probably be improved, for now it serves as an example to deconstruct the parts
+// to get the info needed to maintain the current errors.
+func (w YamlTextError) Error() string {
+	path := strings.Join(w.Node.Path(), "->")
+	var _ = path
+	switch w.Cause {
+	case CauseUnknownField:
+		return fmt.Sprintf("line %d: field %s not found in type %s", w.Node.Line, w.Name, w.To.Type())
+	case CauseKeyAlreadyDefined:
+		if w.Name == "" {
+			// Field already defined
+			return fmt.Sprintf("line %d: field %s already set in type %s", w.Node.Line, w.Name, w.To.Type())
+		}
+		// Mapping already defined
+		return fmt.Sprintf("line %d: mapping key %#v already defined at line %d", w.Node.Line, w.Node.Value, w.Node.Line)
+	case CauseWrongType:
+		value := w.Node.Value
+		tag := w.Node.Tag
+		if tag != seqTag && tag != mapTag {
+			if len(value) > 10 {
+				value = " `" + value[:7] + "...`"
+			} else {
+				value = " `" + value + "`"
+			}
+		}
+
+		return fmt.Sprintf("line %d: cannot unmarshal %s%s into %s", w.Node.Line, shortTag(w.Node.Tag), value, w.To.Type())
 	}
+	return fmt.Sprintf("this should never happen")
 }
 
-
-func NewAlreadyDefinedError(err error, n Node, path string, out reflect.Value, key string, value bool) error {
-	return YamlError{
-		Cause:    YamlTextError{
-			Node:  n,
-			Path:  path,
-			Cause: AlreadyDefinedError{
-				Key: key,
-				Value: value,
-			},
-			To:    out,
-		},
-		Original: err,
-	}
-}
-
-func NewUnknownFieldError(err error, n Node, path string, out reflect.Value, field string) error {
-	return YamlError{
-		Cause:    YamlTextError{
-			Node:  n,
-			Path:  path,
-			Cause: UnknownFieldError{Field: field},
-			To:    out,
-		},
-		Original: err,
-	}
-}
-
-func NewWrongTypeError(err error, n Node, path string, out reflect.Value) error {
-	var exp Kind
-
-	t := out.Type()
+// TODO: @emyrk handle document/alias kinds
+func (w YamlTextError) ToKind() Kind {
+	t := w.To.Type()
 	switch t.Kind() {
 	case reflect.Array, reflect.Slice:
-		exp = SequenceNode
+		return SequenceNode
 	case reflect.Map, reflect.Struct:
-		exp = MappingNode
+		return MappingNode
 	default:
-		exp = ScalarNode
+		return ScalarNode
 	}
+}
 
+func NewUnknownFieldError(err error, n Node, out reflect.Value, name string) error {
 	return YamlError{
-		Cause:    YamlTextError{
+		Cause: YamlTextError{
 			Node:  n,
-			Path:  path,
-			Cause: WrongTypeError{
-				Expected: exp,
-				Of:       underlyingPrimitive(out),
-			},
+			Name:  name,
 			To:    out,
+			Cause: CauseUnknownField,
 		},
 		Original: err,
 	}
 }
 
-
-
-
-func (w YamlTextError) Error() string {
-	return ""
+func NewAlreadyDefinedError(err error, n Node, out reflect.Value, name string) error {
+	return YamlError{
+		Cause: YamlTextError{
+			Node:  n,
+			Cause: CauseKeyAlreadyDefined,
+			To:    out,
+			Name:  name,
+		},
+		Original: err,
+	}
 }
 
-func (w GoLangStructError) Error() string {
-	return ""
+func NewWrongTypeError(err error, n Node, out reflect.Value) error {
+	return YamlError{
+		Cause: YamlTextError{
+			Node:  n,
+			Cause: CauseWrongType,
+			To:    out,
+		},
+		Original: err,
+	}
 }
 
 func NewGoLangStructError(err error) error {
@@ -123,47 +157,6 @@ func NewGoLangStructError(err error) error {
 		},
 		Original: err,
 	}
-}
-
-
-type UnknownFieldError struct {
-	Field string
-}
-
-
-
-func (w UnknownFieldError) Error() string {
-	return ""
-}
-
-
-// WrongTypeError is when the type of the yaml does not match the golang type.
-type WrongTypeError struct {
-	Expected Kind
-	Of       string
-}
-
-type AlreadyDefinedError struct {
-	Key string
-	// Value
-	// true: Value already set
-	// false: Key already set
-	Value bool
-}
-
-
-func (w AlreadyDefinedError) Error() string {
-	return ""
-}
-
-
-func (w YamlError) Error() string {
-	return ""
-}
-
-
-func (w WrongTypeError) Error() string {
-	return ""
 }
 
 func underlyingPrimitive(i interface{}) string {
