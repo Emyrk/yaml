@@ -68,6 +68,15 @@ type YamlTextError struct {
 	Cause YamlTextErrorCause
 	// To is the GoLang value the yaml text was attempted to be decoded into.
 	To reflect.Value
+
+	// Meta is extra fields that can be added if additional context is needed
+	Meta map[string]string
+}
+
+// metaField is provided to handle arbitrary extra values
+type metaField struct {
+	Key   string
+	Value string
 }
 
 // Error reconstructs the original error from the fields.
@@ -80,12 +89,13 @@ func (w YamlTextError) Error() string {
 	case CauseUnknownField:
 		return fmt.Sprintf("line %d: field %s not found in type %s", w.Node.Line, w.Name, w.To.Type())
 	case CauseKeyAlreadyDefined:
-		if w.Name == "" {
+		if w.Name != "" {
 			// Field already defined
 			return fmt.Sprintf("line %d: field %s already set in type %s", w.Node.Line, w.Name, w.To.Type())
 		}
 		// Mapping already defined
-		return fmt.Sprintf("line %d: mapping key %#v already defined at line %d", w.Node.Line, w.Node.Value, w.Node.Line)
+		l := w.Meta["line_num"]
+		return fmt.Sprintf("line %d: mapping key %#v already defined at line %s", w.Node.Line, w.Node.Value, l)
 	case CauseWrongType:
 		value := w.Node.Value
 		tag := w.Node.Tag
@@ -127,13 +137,16 @@ func NewUnknownFieldError(err error, n Node, out reflect.Value, name string) err
 	}
 }
 
-func NewAlreadyDefinedError(err error, n Node, out reflect.Value, name string) error {
+func NewAlreadyDefinedError(err error, n Node, out reflect.Value, name string, lineAt int) error {
 	return YamlError{
 		Cause: YamlTextError{
 			Node:  n,
 			Cause: CauseKeyAlreadyDefined,
 			To:    out,
 			Name:  name,
+			Meta: map[string]string{
+				"line_num": fmt.Sprintf("%d", lineAt),
+			},
 		},
 		Original: err,
 	}

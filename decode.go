@@ -778,7 +778,7 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 					// CustomErrorEvent
 					err := fmt.Errorf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line)
 					// Pass the empty string for the name, as nj.Value is the name.
-					d.terrors = append(d.terrors, NewAlreadyDefinedError(err, *nj, out, ""))
+					d.terrors = append(d.terrors, NewAlreadyDefinedError(err, *nj, out, "", ni.Line))
 					//d.terrors = append(d.terrors, fmt.Sprintf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line))
 				}
 			}
@@ -911,7 +911,7 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 				if doneFields[info.Id] {
 					// CustomErrorEvent
 					err := fmt.Errorf("line %d: field %s already set in type %s", ni.Line, name.String(), out.Type())
-					d.terrors = append(d.terrors, NewAlreadyDefinedError(err, *n, out, name.String()))
+					d.terrors = append(d.terrors, NewAlreadyDefinedError(err, *ni, out, name.String(), ni.Line))
 					//d.terrors = append(d.terrors, fmt.Sprintf("line %d: field %s already set in type %s", ni.Line, name.String(), out.Type()))
 					continue
 				}
@@ -936,7 +936,7 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 		} else if d.knownFields {
 			// CustomErrorEvent
 			err := fmt.Errorf("line %d: field %s not found in type %s", ni.Line, name.String(), out.Type())
-			d.terrors = append(d.terrors, NewUnknownFieldError(err, *n, out, name.String()))
+			d.terrors = append(d.terrors, NewUnknownFieldError(err, *ni, out, name.String()))
 			//d.terrors = append(d.terrors, fmt.Sprintf("line %d: field %s not found in type %s", ni.Line, name.String(), out.Type()))
 		}
 	}
