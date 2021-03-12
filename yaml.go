@@ -128,7 +128,7 @@ func (dec *Decoder) Decode(v interface{}) (err error) {
 	if out.Kind() == reflect.Ptr && !out.IsNil() {
 		out = out.Elem()
 	}
-	d.unmarshal(node, out)
+	d.unmarshal(nil, node, out)
 	if len(d.terrors) > 0 {
 		return &TypeError{d.terrors}
 	}
@@ -146,7 +146,7 @@ func (n *Node) Decode(v interface{}) (err error) {
 	if out.Kind() == reflect.Ptr && !out.IsNil() {
 		out = out.Elem()
 	}
-	d.unmarshal(n, out)
+	d.unmarshal(nil, n, out)
 	if len(d.terrors) > 0 {
 		return &TypeError{d.terrors}
 	}
@@ -164,7 +164,7 @@ func unmarshal(in []byte, out interface{}, strict bool) (err error) {
 		if v.Kind() == reflect.Ptr && !v.IsNil() {
 			v = v.Elem()
 		}
-		d.unmarshal(node, v)
+		d.unmarshal(nil, node, v)
 	}
 	if len(d.terrors) > 0 {
 		return &TypeError{d.terrors}

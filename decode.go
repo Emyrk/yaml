@@ -362,7 +362,7 @@ func (d *decoder) terror(n *Node, tag string, out reflect.Value) {
 	// d.terrors = append(d.terrors, fmt.Sprintf("line %d: cannot unmarshal %s%s into %s", n.Line, shortTag(tag), value, out.Type()))
 }
 
-func (d *decoder) callUnmarshaler(n *Node, u Unmarshaler) (good bool) {
+func (d *decoder) callUnmarshaler(parent *Node, n *Node, u Unmarshaler) (good bool) {
 	err := u.UnmarshalYAML(n)
 	if e, ok := err.(*TypeError); ok {
 		d.terrors = append(d.terrors, e.Errors...)
@@ -374,11 +374,11 @@ func (d *decoder) callUnmarshaler(n *Node, u Unmarshaler) (good bool) {
 	return true
 }
 
-func (d *decoder) callObsoleteUnmarshaler(n *Node, u obsoleteUnmarshaler) (good bool) {
+func (d *decoder) callObsoleteUnmarshaler(parent *Node, n *Node, u obsoleteUnmarshaler) (good bool) {
 	terrlen := len(d.terrors)
 	err := u.UnmarshalYAML(func(v interface{}) (err error) {
 		defer handleErr(&err)
-		d.unmarshal(n, reflect.ValueOf(v))
+		d.unmarshal(parent, n, reflect.ValueOf(v))
 		if len(d.terrors) > terrlen {
 			issues := d.terrors[terrlen:]
 			d.terrors = d.terrors[:terrlen]
@@ -403,7 +403,7 @@ func (d *decoder) callObsoleteUnmarshaler(n *Node, u obsoleteUnmarshaler) (good 
 // its types unmarshalled appropriately.
 //
 // If n holds a null value, prepare returns before doing anything.
-func (d *decoder) prepare(n *Node, out reflect.Value) (newout reflect.Value, unmarshaled, good bool) {
+func (d *decoder) prepare(parent *Node, n *Node, out reflect.Value) (newout reflect.Value, unmarshaled, good bool) {
 	if n.ShortTag() == nullTag {
 		return out, false, false
 	}
@@ -420,11 +420,11 @@ func (d *decoder) prepare(n *Node, out reflect.Value) (newout reflect.Value, unm
 		if out.CanAddr() {
 			outi := out.Addr().Interface()
 			if u, ok := outi.(Unmarshaler); ok {
-				good = d.callUnmarshaler(n, u)
+				good = d.callUnmarshaler(parent, n, u)
 				return out, true, good
 			}
 			if u, ok := outi.(obsoleteUnmarshaler); ok {
-				good = d.callObsoleteUnmarshaler(n, u)
+				good = d.callObsoleteUnmarshaler(parent, n, u)
 				return out, true, good
 			}
 		}
@@ -481,7 +481,7 @@ func allowedAliasRatio(decodeCount int) float64 {
 	}
 }
 
-func (d *decoder) unmarshal(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) unmarshal(parent *Node, n *Node, out reflect.Value) (good bool) {
 	d.decodeCount++
 	if d.aliasDepth > 0 {
 		d.aliasCount++
@@ -495,21 +495,21 @@ func (d *decoder) unmarshal(n *Node, out reflect.Value) (good bool) {
 	}
 	switch n.Kind {
 	case DocumentNode:
-		return d.document(n, out)
+		return d.document(parent, n, out)
 	case AliasNode:
-		return d.alias(n, out)
+		return d.alias(parent, n, out)
 	}
-	out, unmarshaled, good := d.prepare(n, out)
+	out, unmarshaled, good := d.prepare(parent, n, out)
 	if unmarshaled {
 		return good
 	}
 	switch n.Kind {
 	case ScalarNode:
-		good = d.scalar(n, out)
+		good = d.scalar(parent, n, out)
 	case MappingNode:
-		good = d.mapping(n, out)
+		good = d.mapping(parent, n, out)
 	case SequenceNode:
-		good = d.sequence(n, out)
+		good = d.sequence(parent, n, out)
 	case 0:
 		if n.IsZero() {
 			return d.null(out)
@@ -521,23 +521,23 @@ func (d *decoder) unmarshal(n *Node, out reflect.Value) (good bool) {
 	return good
 }
 
-func (d *decoder) document(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) document(parent *Node, n *Node, out reflect.Value) (good bool) {
 	if len(n.Content) == 1 {
 		d.doc = n
-		d.unmarshal(n.Content[0], out)
+		d.unmarshal(parent, n.Content[0], out)
 		return true
 	}
 	return false
 }
 
-func (d *decoder) alias(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) alias(parent *Node, n *Node, out reflect.Value) (good bool) {
 	if d.aliases[n] {
 		// TODO this could actually be allowed in some circumstances.
 		failf("anchor '%s' value contains itself", n.Value)
 	}
 	d.aliases[n] = true
 	d.aliasDepth++
-	good = d.unmarshal(n.Alias, out)
+	good = d.unmarshal(parent, n.Alias, out)
 	d.aliasDepth--
 	delete(d.aliases, n)
 	return good
@@ -562,7 +562,7 @@ func (d *decoder) null(out reflect.Value) bool {
 	return false
 }
 
-func (d *decoder) scalar(n *Node, out reflect.Value) bool {
+func (d *decoder) scalar(parent *Node, n *Node, out reflect.Value) bool {
 	var tag string
 	var resolved interface{}
 	if n.indicatedString() {
@@ -726,7 +726,7 @@ func settableValueOf(i interface{}) reflect.Value {
 	return sv
 }
 
-func (d *decoder) sequence(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) sequence(parent *Node, n *Node, out reflect.Value) (good bool) {
 	l := len(n.Content)
 
 	var iface reflect.Value
@@ -750,7 +750,7 @@ func (d *decoder) sequence(n *Node, out reflect.Value) (good bool) {
 	j := 0
 	for i := 0; i < l; i++ {
 		e := reflect.New(et).Elem()
-		if ok := d.unmarshal(n.Content[i], e); ok {
+		if ok := d.unmarshal(parent, n.Content[i], e); ok {
 			out.Index(j).Set(e)
 			j++
 		}
@@ -764,7 +764,7 @@ func (d *decoder) sequence(n *Node, out reflect.Value) (good bool) {
 	return true
 }
 
-func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) mapping(parent *Node, n *Node, out reflect.Value) (good bool) {
 	l := len(n.Content)
 	if d.uniqueKeys {
 		nerrs := len(d.terrors)
@@ -786,7 +786,7 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 	}
 	switch out.Kind() {
 	case reflect.Struct:
-		return d.mappingStruct(n, out)
+		return d.mappingStruct(parent, n, out)
 	case reflect.Map:
 		// okay
 	case reflect.Interface:
@@ -821,13 +821,15 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 		out.Set(reflect.MakeMap(outt))
 		mapIsNew = true
 	}
+
+	// TODO: @emyrk review parent here
 	for i := 0; i < l; i += 2 {
 		if isMerge(n.Content[i]) {
-			d.merge(n.Content[i+1], out)
+			d.merge(parent, n.Content[i+1], out)
 			continue
 		}
 		k := reflect.New(kt).Elem()
-		if d.unmarshal(n.Content[i], k) {
+		if d.unmarshal(parent, n.Content[i], k) {
 			kkind := k.Kind()
 			if kkind == reflect.Interface {
 				kkind = k.Elem().Kind()
@@ -836,7 +838,7 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 				failf("invalid map key: %#v", k.Interface())
 			}
 			e := reflect.New(et).Elem()
-			if d.unmarshal(n.Content[i+1], e) || n.Content[i+1].ShortTag() == nullTag && (mapIsNew || !out.MapIndex(k).IsValid()) {
+			if d.unmarshal(parent, n.Content[i+1], e) || n.Content[i+1].ShortTag() == nullTag && (mapIsNew || !out.MapIndex(k).IsValid()) {
 				out.SetMapIndex(k, e)
 			}
 		}
@@ -859,7 +861,7 @@ func isStringMap(n *Node) bool {
 	return true
 }
 
-func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
+func (d *decoder) mappingStruct(parent, n *Node, out reflect.Value) (good bool) {
 	sinfo, err := getStructInfo(out.Type())
 	if err != nil {
 		panic(NewGoLangStructError(err))
@@ -875,7 +877,7 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 
 	for _, index := range sinfo.InlineUnmarshalers {
 		field := d.fieldByIndex(n, out, index)
-		d.prepare(n, field)
+		d.prepare(parent, n, field)
 	}
 
 	var doneFields []bool
@@ -887,10 +889,12 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 	for i := 0; i < l; i += 2 {
 		ni := n.Content[i]
 		if isMerge(ni) {
-			d.merge(n.Content[i+1], out)
+			d.merge(ni, n.Content[i+1], out)
 			continue
 		}
-		if !d.unmarshal(ni, name) {
+		// TODO: @emyrk Unsure how this one should work
+		//		I figured ni would always be a field
+		if !d.unmarshal(ni, ni, name) {
 			continue
 		}
 		if info, ok := sinfo.FieldsMap[name.String()]; ok {
@@ -910,13 +914,13 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 			} else {
 				field = d.fieldByIndex(n, out, info.Inline)
 			}
-			d.unmarshal(n.Content[i+1], field)
+			d.unmarshal(ni, n.Content[i+1], field)
 		} else if sinfo.InlineMap != -1 {
 			if inlineMap.IsNil() {
 				inlineMap.Set(reflect.MakeMap(inlineMap.Type()))
 			}
 			value := reflect.New(elemType).Elem()
-			d.unmarshal(n.Content[i+1], value)
+			d.unmarshal(ni, n.Content[i+1], value)
 			inlineMap.SetMapIndex(name, value)
 		} else if d.knownFields {
 			// CustomErrorEvent
@@ -932,15 +936,15 @@ func failWantMap() {
 	failf("map merge requires map or sequence of maps as the value")
 }
 
-func (d *decoder) merge(n *Node, out reflect.Value) {
+func (d *decoder) merge(parent *Node, n *Node, out reflect.Value) {
 	switch n.Kind {
 	case MappingNode:
-		d.unmarshal(n, out)
+		d.unmarshal(parent, n, out)
 	case AliasNode:
 		if n.Alias != nil && n.Alias.Kind != MappingNode {
 			failWantMap()
 		}
-		d.unmarshal(n, out)
+		d.unmarshal(parent, n, out)
 	case SequenceNode:
 		// Step backwards as earlier nodes take precedence.
 		for i := len(n.Content) - 1; i >= 0; i-- {
@@ -952,7 +956,7 @@ func (d *decoder) merge(n *Node, out reflect.Value) {
 			} else if ni.Kind != MappingNode {
 				failWantMap()
 			}
-			d.unmarshal(ni, out)
+			d.unmarshal(parent, ni, out)
 		}
 	default:
 		failWantMap()

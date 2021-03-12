@@ -104,6 +104,8 @@ B:
  P:
   S: "Goodbye"
   I: "Hello"
+  B: 
+    - 1
 `
 		var tmp s
 		err := Unmarshal([]byte(y), &tmp)
