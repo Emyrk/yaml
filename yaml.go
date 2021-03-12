@@ -290,7 +290,9 @@ func handleErr(err *error) {
 	if v := recover(); v != nil {
 		if e, ok := v.(yamlError); ok {
 			*err = e.err
-		} else {
+		} else if e, ok := v.(YamlError); ok {
+			*err = e
+		} else{
 			panic(v)
 		}
 	}
@@ -605,6 +607,7 @@ func getStructInfo(st reflect.Type) (*structInfo, error) {
 					for _, finfo := range sinfo.FieldsList {
 						if _, found := fieldsMap[finfo.Key]; found {
 							msg := "duplicated key '" + finfo.Key + "' in struct " + st.String()
+							//return nil, NewYamlError(nil,"",  )
 							return nil, errors.New(msg)
 						}
 						if finfo.Inline == nil {

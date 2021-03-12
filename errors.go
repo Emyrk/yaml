@@ -4,38 +4,84 @@ import (
 	"reflect"
 )
 
+// YamlError is the top level detailed error.
 type YamlError struct {
+	// Cause will be a structured error with additional details
+	// about the error itself.
+	Cause error
+	// Original is a 1 sentence error for brevity.
+	Original error
+}
+
+
+
+// GoLangStructError are errors that happen when decoding the golang struct,
+// before the yaml is touched.
+// These errors are usually internal server errors as it's a mistake
+// on the Go dev, not the yaml document.
+type GoLangStructError struct {
+	Err error
+}
+
+// YamlTextError happens when mapping the yaml text to a golang struct.
+// These errors concern the user who wrote the yaml document.
+type YamlTextError struct {
+	// Node is the yaml node when the error took place.
 	Node Node
+	// Path is the yaml hierarchy path to the node encountered for the error.
+	// The path include the field attempting to be decoded.
 	Path string
 
+	// Cause is the error that caused the TextError.
 	Cause error
+	// To is the GoLang value the yaml text was attempted to be decoded into.
+	To reflect.Value
 }
 
-// WrongTypeError is when the type of the yaml does not match the golang type.
-type WrongTypeError struct {
-	Expected Kind
-	Of       string
-}
-
-type AlreadyDefinedError struct {
-}
-
-func NewYamlError(n *Node, path string, cause error) error {
+func NewYamlDecodeError(err error, n Node, path string, out reflect.Value) error {
 	return YamlError{
-		Node:  *n,
-		Path:  path,
-		Cause: cause,
+		Cause:    YamlTextError{
+			Node:  n,
+			Path:  path,
+			Cause: err,
+			To:    out,
+		},
+		Original: err,
 	}
 }
 
-func (w YamlError) Error() string {
-	return ""
+
+func NewAlreadyDefinedError(err error, n Node, path string, out reflect.Value, key string, value bool) error {
+	return YamlError{
+		Cause:    YamlTextError{
+			Node:  n,
+			Path:  path,
+			Cause: AlreadyDefinedError{
+				Key: key,
+				Value: value,
+			},
+			To:    out,
+		},
+		Original: err,
+	}
 }
 
-func NewWrongTypeError(expected interface{}) error {
+func NewUnknownFieldError(err error, n Node, path string, out reflect.Value, field string) error {
+	return YamlError{
+		Cause:    YamlTextError{
+			Node:  n,
+			Path:  path,
+			Cause: UnknownFieldError{Field: field},
+			To:    out,
+		},
+		Original: err,
+	}
+}
+
+func NewWrongTypeError(err error, n Node, path string, out reflect.Value) error {
 	var exp Kind
 
-	t := reflect.TypeOf(expected)
+	t := out.Type()
 	switch t.Kind() {
 	case reflect.Array, reflect.Slice:
 		exp = SequenceNode
@@ -45,11 +91,76 @@ func NewWrongTypeError(expected interface{}) error {
 		exp = ScalarNode
 	}
 
-	return WrongTypeError{
-		Expected: exp,
-		Of:       underlyingPrimitive(expected),
+	return YamlError{
+		Cause:    YamlTextError{
+			Node:  n,
+			Path:  path,
+			Cause: WrongTypeError{
+				Expected: exp,
+				Of:       underlyingPrimitive(out),
+			},
+			To:    out,
+		},
+		Original: err,
 	}
 }
+
+
+
+
+func (w YamlTextError) Error() string {
+	return ""
+}
+
+func (w GoLangStructError) Error() string {
+	return ""
+}
+
+func NewGoLangStructError(err error) error {
+	return YamlError{
+		Cause: GoLangStructError{
+			Err: err,
+		},
+		Original: err,
+	}
+}
+
+
+type UnknownFieldError struct {
+	Field string
+}
+
+
+
+func (w UnknownFieldError) Error() string {
+	return ""
+}
+
+
+// WrongTypeError is when the type of the yaml does not match the golang type.
+type WrongTypeError struct {
+	Expected Kind
+	Of       string
+}
+
+type AlreadyDefinedError struct {
+	Key string
+	// Value
+	// true: Value already set
+	// false: Key already set
+	Value bool
+}
+
+
+func (w AlreadyDefinedError) Error() string {
+	return ""
+}
+
+
+func (w YamlError) Error() string {
+	return ""
+}
+
 
 func (w WrongTypeError) Error() string {
 	return ""
