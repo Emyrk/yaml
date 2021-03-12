@@ -310,7 +310,7 @@ func (p *parser) mapping() *Node {
 type decoder struct {
 	doc     *Node
 	aliases map[*Node]bool
-	terrors []string
+	terrors []error
 
 	stringMapType  reflect.Type
 	generalMapType reflect.Type
@@ -354,7 +354,9 @@ func (d *decoder) terror(n *Node, tag string, out reflect.Value) {
 			value = " `" + value + "`"
 		}
 	}
-	d.terrors = append(d.terrors, fmt.Sprintf("line %d: cannot unmarshal %s%s into %s", n.Line, shortTag(tag), value, out.Type()))
+
+	d.terrors = append(d.terrors, NewYamlError(n, "", NewWrongTypeError(out)))
+	// d.terrors = append(d.terrors, fmt.Sprintf("line %d: cannot unmarshal %s%s into %s", n.Line, shortTag(tag), value, out.Type()))
 }
 
 func (d *decoder) callUnmarshaler(n *Node, u Unmarshaler) (good bool) {
@@ -768,6 +770,7 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 			for j := i + 2; j < l; j += 2 {
 				nj := n.Content[j]
 				if ni.Kind == nj.Kind && ni.Value == nj.Value {
+					// d.terrors = append(d.terrors, )
 					d.terrors = append(d.terrors, fmt.Sprintf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line))
 				}
 			}

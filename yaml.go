@@ -313,11 +313,15 @@ func failf(format string, args ...interface{}) {
 // types. When this error is returned, the value is still
 // unmarshaled partially.
 type TypeError struct {
-	Errors []string
+	Errors []error
 }
 
 func (e *TypeError) Error() string {
-	return fmt.Sprintf("yaml: unmarshal errors:\n  %s", strings.Join(e.Errors, "\n  "))
+	errors := make([]string, len(e.Errors))
+	for i := range errors {
+		errors[i] = e.Errors[i].Error()
+	}
+	return fmt.Sprintf("yaml: unmarshal errors:\n  %s", strings.Join(errors, "\n  "))
 }
 
 type Kind uint32
@@ -363,7 +367,7 @@ const (
 //             Address yaml.Node
 //     }
 //     err := yaml.Unmarshal(data, &person)
-// 
+//
 // Or by itself:
 //
 //     var person Node
@@ -373,7 +377,7 @@ type Node struct {
 	// Kind defines whether the node is a document, a mapping, a sequence,
 	// a scalar value, or an alias to another node. The specific data type of
 	// scalar nodes may be obtained via the ShortTag and LongTag methods.
-	Kind  Kind
+	Kind Kind
 
 	// Style allows customizing the apperance of the node in the tree.
 	Style Style
@@ -420,7 +424,6 @@ func (n *Node) IsZero() bool {
 	return n.Kind == 0 && n.Style == 0 && n.Tag == "" && n.Value == "" && n.Anchor == "" && n.Alias == nil && n.Content == nil &&
 		n.HeadComment == "" && n.LineComment == "" && n.FootComment == "" && n.Line == 0 && n.Column == 0
 }
-
 
 // LongTag returns the long form of the tag that indicates the data type for
 // the node. If the Tag field isn't explicitly defined, one will be computed
