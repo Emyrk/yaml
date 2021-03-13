@@ -778,6 +778,7 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 					// CustomErrorEvent
 					err := fmt.Errorf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line)
 					// Pass the empty string for the name, as nj.Value is the name.
+					nj.SetParent(n.Parent) // The parent is not set until later. Set it now for the error
 					d.terrors = append(d.terrors, NewAlreadyDefinedError(err, *nj, out, "", ni.Line))
 					//d.terrors = append(d.terrors, fmt.Sprintf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line))
 				}

@@ -70,13 +70,14 @@ A: 7
 	})
 
 	t.Run("KeyAlreadyDefined", func(t *testing.T) {
-		type s struct {
-			A int
-		}
+		type s map[string]interface{}
 
 		y := `
-A: 3
-A: 4`
+a:
+ b:
+  c:
+   d: "bar"
+   d: "foo"`
 		var tmp s
 		err := Unmarshal([]byte(y), &tmp)
 		// Default:

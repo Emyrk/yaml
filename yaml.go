@@ -427,9 +427,10 @@ type Node struct {
 // Path returns the hierarchy path to get to the field where this node is.
 func (n *Node) Path() []string {
 	var path []string
-	if n.Kind == MappingNode || n.Kind == SequenceNode {
-		path = []string{n.Value}
-	}
+	//if n.Kind == MappingNode || n.Kind == SequenceNode {
+	path = []string{n.Value}
+	//}
+
 	next := n.Parent
 	for next != nil {
 		sect := next.Value
