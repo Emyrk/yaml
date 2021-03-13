@@ -442,21 +442,6 @@ func (n *Node) Path() []string {
 	return path
 }
 
-func (n Node) isSeqChild() bool {
-	next := n.Parent
-	for next != nil {
-		switch next.Kind {
-		case SequenceNode:
-			return true
-		case ScalarNode:
-		default:
-			return false
-		}
-		next = next.Parent
-	}
-	return false
-}
-
 func (n *Node) SetParent(parent *Node) {
 	n.Parent = parent
 }
